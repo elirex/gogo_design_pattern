@@ -143,10 +143,12 @@ class MindMapModel:
         if (not node): return False
         if (parent_id not in self._components): return False
         # TODO: insert node logic
+        if (node.id in self._components): return False
+
+        parent = self._components[parent_id]
+        node.set_parent(parent)
+        self._components[node.id] = node
         return True
-
-
-
 
 
 class SimpleNodeFactory:
