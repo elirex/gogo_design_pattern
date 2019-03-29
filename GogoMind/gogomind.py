@@ -4,6 +4,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 
+from model import MindMapModel, Component, Root, Node
 import os
 import sys
 
@@ -49,6 +50,8 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         self.scene = MapScene()
         self.scene_view = QGraphicsView(self.scene)
+
+
 
         # self.path holds the path of the currently open file.
         # If none, we haven't got a file open yet (or creating new).
@@ -147,33 +150,53 @@ class MainWindow(QMainWindow):
         edit_toolbar.addAction(insert_action)
         edit_menu.addAction(insert_action)
 
+
+        self._mind_map = MindMapModel()
+        self._node_location = {}
+
         self.update_title()
         self.show()
 
         ### Just for demo
-        root = MapItem(0, 0, 'Computer <Root, ID:0>')
-        node = MapItem(300, 0, 'OS <Node, ID:1>')
-        node2 = MapItem(300, 150, 'Network <Node, ID:2>')
-        line1 = QGraphicsLineItem(50, 50, 350, 50)
-        line2 = QGraphicsLineItem(200, 50, 300, 200)
+        # root = MapItem(0, 0, 'Computer <Root, ID:0>')
+        # node = MapItem(300, 0, 'OS <Node, ID:1>')
+        # node2 = MapItem(300, 150, 'Network <Node, ID:2>')
+        # line1 = QGraphicsLineItem(50, 50, 350, 50)
+        # line2 = QGraphicsLineItem(200, 50, 300, 200)
 
-        node3 = MapItem(600, 0, 'MacOS <Node, ID:3>')
-        line3 = QGraphicsLineItem(350, 50, 600, 50)
-        self.scene.addItem(node3)
-        self.scene.addItem(line3)
+        # node3 = MapItem(600, 0, 'MacOS <Node, ID:3>')
+        # line3 = QGraphicsLineItem(350, 50, 600, 50)
+        # self.scene.addItem(node3)
+        # self.scene.addItem(line3)
 
-        self.scene.addItem(line1)
-        self.scene.addItem(line2)
-        self.scene.addItem(root)
-        self.scene.addItem(node)
-        self.scene.addItem(node2)
+        # self.scene.addItem(line1)
+        # self.scene.addItem(line2)
+        # self.scene.addItem(root)
+        # self.scene.addItem(node)
+        # self.scene.addItem(node2)
         ###
 
+    def draw(self):
+        self.scene.clear()
+
+
     def insert_node_dialog(self):
-        node_id, okPressed = QInputDialog.getText(self, "Insert a node", "Node ID:", QLineEdit.Normal, "")
-        print(node_id)
-        node_desc, okPressed = QInputDialog.getText(self, "Insert a node", "Node description:", QLineEdit.Normal, "")
-        print(node_desc)
+        if (self._mind_map.is_empty()):
+            node_desc, okPressed = QInputDialog.getText(self, "Create a root", "Root description:", QLineEdit.Normal, "")
+            if (node_desc):
+                if (self._mind_map.create_mind_map(node_desc)):
+                    print(self._mind_map.root.get_content())
+                    # root = MapItem(0, 0, self._mind_map.root.get_content())
+                    # self.scene.addItem(root)
+        else:
+            parent_id, okPressed = QInputDialog.getText(self, "Insert a node", "Node ID:", QLineEdit.Normal, "")
+            print(parent_id)
+            node_desc, okPressed = QInputDialog.getText(self, "Insert a node", "Node description:", QLineEdit.Normal, "")
+            print(node_desc)
+            if (parent_id and node_desc):
+                node = self._mind_map.create_node(node_desc)
+                if (self._mind_map.insert_node(node, int(parent_id))):
+                    print(node.get_content())
 
     def dialog_critical(self, s):
         dlg = QMessageBox(self)
