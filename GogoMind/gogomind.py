@@ -177,26 +177,35 @@ class MainWindow(QMainWindow):
         ###
 
     def draw(self):
-        self.scene.clear()
+        # self.scene.clear()
+        print("map: {}".format(self._mind_map.map))
 
 
     def insert_node_dialog(self):
         if (self._mind_map.is_empty()):
-            node_desc, okPressed = QInputDialog.getText(self, "Create a root", "Root description:", QLineEdit.Normal, "")
-            if (node_desc):
-                if (self._mind_map.create_mind_map(node_desc)):
-                    print(self._mind_map.root.get_content())
-                    # root = MapItem(0, 0, self._mind_map.root.get_content())
-                    # self.scene.addItem(root)
+            desc, okPressed = QInputDialog.getText(self, "Create a root", "Root description:", QLineEdit.Normal, "")
+            if (desc):
+                if (self._mind_map.create_mind_map(desc)):
+                    print("Add {} node to map".format(self._mind_map.root.info)) 
+            else:
+                print("Descrption is empty.")
         else:
-            parent_id, okPressed = QInputDialog.getText(self, "Insert a node", "Node ID:", QLineEdit.Normal, "")
-            print(parent_id)
-            node_desc, okPressed = QInputDialog.getText(self, "Insert a node", "Node description:", QLineEdit.Normal, "")
-            print(node_desc)
-            if (parent_id and node_desc):
-                node = self._mind_map.create_node(node_desc)
-                if (self._mind_map.insert_node(node, int(parent_id))):
-                    print(node.get_content())
+            pid, okPressed = QInputDialog.getText(self, "Insert a node", "Node ID:", QLineEdit.Normal, "")
+            desc, okPressed = QInputDialog.getText(self, "Insert a node", "Node description:", QLineEdit.Normal, "")
+            print("<pid: {}, desc: {}>".format(pid, desc))
+            if (pid and desc):
+                try:
+                    pid = int(pid)
+                    node = self._mind_map.create_node(desc)
+                    if (self._mind_map.insert_node(node, pid)):
+                        print("Add {} node to map".format(node.info))
+                    else:
+                        print("Add {} node to map is failed".format(node.info))
+                except ValueError:
+                   print("The parent id is not an integer!")
+            else:
+                print("The parent id o description is empty.")
+        self.draw()
 
     def dialog_critical(self, s):
         dlg = QMessageBox(self)

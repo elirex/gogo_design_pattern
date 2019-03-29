@@ -64,11 +64,10 @@ class Component(abc.ABC):
         else:
             return False
 
-
+    @property
     @abc.abstractmethod
-    def get_content(self) -> str:
-        type = "Root" if isinstance(self, Root) else "Node"
-        return self._desc + " <" + type + "> ID:" + str(self._id)
+    def info(self) -> Dict[str, str]:
+        return {"desc": self._desc, "id": str(self._id)}
 
 
 class Root(Component):
@@ -99,9 +98,11 @@ class Root(Component):
     def set_parent(self, parent: Component) -> None:
         raise ValueError("Root hasn't the parent.")
 
-    
-    def get_content(self) -> str:
-        return super().get_content()
+    @property 
+    def info(self) -> str:
+        info = super().info
+        info["type"] = "Root"
+        return "{desc} <Id:{id}, Type:{type}>".format(**info)
 
 
 class Node(Component):
@@ -129,8 +130,11 @@ class Node(Component):
     def set_parent(self, parent:Component) -> bool:
         return super().set_parent(parent)
 
-    def get_content(self) -> str:
-        return super().get_content()
+    @property
+    def info(self) -> str:
+        info = super().info
+        info["type"] = "Node"
+        return "{desc} <Id:{id}, Type:{type}>".format(**info)
 
 
 class MindMapModel:
@@ -140,15 +144,12 @@ class MindMapModel:
         self._components = {}
         self._serial_ids = -1
 
-
     @property
     def root(self) -> Root:
         return self._root
 
-
     def is_empty(self) -> bool:
         return self._root == None
-
 
     def create_mind_map(self, desc:str) -> bool:
         if (self._root):
@@ -156,43 +157,36 @@ class MindMapModel:
             return False
         else:
             self._root = self.create_node(desc)
-            print("MidMapModel", "Create", self._root.get_content())
+            print("MidMapModel", "Create", self._root.info)
             return self.insert_node(self._root, -1)
-
 
     def create_node(self, desc:str) -> Component:
         type = COMPONENT_TYPE_NODE if (self._root) else COMPONENT_TYPE_ROOT
         self._serial_ids += 1
         return SimpleNodeFactory.create_node(type, self._serial_ids, desc)
 
-
-    def insert_node(self, node: Component, parent_id:int) -> bool:
+    def insert_node(self, node: Component, pid:int) -> bool:
         if (isinstance(node, Root)):
             if (node.id in self._components): return False
         else:
             if (not node): return False
-            if (parent_id not in self._components): return False
-            # TODO: insert node logic
+            if (pid not in self._components): return False
             if (node.id in self._components): return False
-            parent = self._components[parent_id]
+            parent = self._components[pid]
+            parent.add_child(node)
             node.set_parent(parent)
 
         self._components[node.id] = node
         return True
 
-
-    def get_map(self) -> List[List[int]]:
+    @property
+    def map(self) -> List[List[int]]:
         def travel(root: Component, level: int, result: List[List[int]]) -> None:
-            if (root == None): return
+            if (not root): return
             if (level >= len(result)): result.append([])
-    
-            level_list = result[level]
-            if (instance(root, Root)):
-                level_list.append(root.id)
-            else:
-                for child in root.get_childern():
-                    level_list.append(child.id)
-                    travel(child, level + 1, result)
+            result[level].append(root.id)
+            for child in root.get_childern():
+                travel(child, level + 1, result)
 
         result = []
         if (self._root == None):
