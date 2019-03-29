@@ -181,17 +181,17 @@ class MindMapModel:
 
     @property
     def map(self) -> List[List[int]]:
-        def travel(root: Component, level: int, result: List[List[int]]) -> None:
+        def traversal(root: Component, level: int, result: List[List[int]]) -> None:
             if (not root): return
             if (level >= len(result)): result.append([])
             result[level].append(root.id)
             for child in root.get_childern():
-                travel(child, level + 1, result)
+                traversal(child, level + 1, result)
 
         result = []
         if (self._root == None):
             return result
-        travel(self._root, 0, result)
+        traversal(self._root, 0, result)
         return result
 
 
