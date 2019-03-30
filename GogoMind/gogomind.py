@@ -214,34 +214,33 @@ class MainWindow(QMainWindow):
         dlg.show()
 
     def file_open(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open file", "", "GogoMind documents (*.ggm);")
-
-        try:
-            with open(path, 'rU') as f:
-                text = f.read()
-
-        except Exception as e:
-            self.dialog_critical(str(e))
-
-        else:
+        path, _ = QFileDialog.getOpenFileName(self, "Open file", "", "All Files (*);;GogoMind documents (*.ggm)")
+        if (self._mind_map.load(path)):
             self.path = path
             self.update_title()
+            return True
+        else:
+            return False
 
     def file_save(self):
         if self.path is None:
             # If we do not have a path, we need to use Save As.
             return self.file_saveas()
+        else:
+            return self._mind_map.save(self.path)
 
     def file_saveas(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save file", "", "GogoMind documents (*.ggm);")
-
+        path, _ = QFileDialog.getSaveFileName(self, "Save file", "", "GogoMind documents (*.ggm)")
         if not path:
             # If dialog is cancelled, will return ''
-            return
-
+            return False
         else:
-            self.path = path
-            self.update_title()
+            if (self._mind_map.save(path)):
+                self.path = path
+                self.update_title()
+                return True
+            else:
+                return False
 
     def update_title(self):
         self.setWindowTitle("%s - GogoMind" % (os.path.basename(self.path) if self.path else "Untitled"))
