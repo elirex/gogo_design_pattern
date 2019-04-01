@@ -240,6 +240,7 @@ class MainWindow(QMainWindow):
     def file_open(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open file", "", "All Files (*);;GogoMind documents (*.ggm)")
         if (self._mind_map.load(path)):
+            self.draw()
             self.path = path
             self.update_title()
             return True

@@ -169,33 +169,41 @@ class MindMapModel:
             return False
         else:
             self._root = self.create_node(desc)
-            print("MidMapModel", "Create", self._root.info)
-            return self.insert_node(self._root, None)
+            print("Create MidMapModel")
+            return self.insert_node(self.create_node(desc), None)
+            # return self.insert_node(self._root, None)
 
     def create_node(self, desc:str) -> Component:
-        # type = COMPONENT_TYPE_NODE if (self._root) else COMPONENT_TYPE_ROOT
         self._serial_ids += 1
         return self._create_node(self._serial_ids, desc)
-        # return SimpleNodeFactory.create_node(type, self._serial_ids, desc)
+
+    def _create_node(self, id:int, desc:str) -> Component:
+        type = COMPONENT_TYPE_ROOT if (id == 0) else COMPONENT_TYPE_NODE
+        return SimpleNodeFactory.create_node(type, id, desc)
 
     def insert_node(self, node: Component, pid:int) -> bool:
         if (isinstance(node, Root)):
-            if (node.id in self._components): return False
+            if (self._root):
+                raise Exception("Root exists.")
+                return False
+            else:
+                self._root = node
         else:
-            if (not node): return False
-            if (pid not in self._components): return False
-            if (node.id in self._components): return False
+            if (not node): 
+                raise Exception("Node must by not None.")
+                return False
+            if (pid not in self._components): 
+                raise Exception("Parent not exists.")
+                return False
+            if (node.id in self._components): 
+                raise Exception("Node({}) exists.".format(node.id))
+                return False
             parent = self._components[pid]
             parent.add_child(node)
             node.set_parent(parent)
 
         self._components[node.id] = node
         return True
-
-    def _create_node(self, id:int, desc:str) -> Component:
-        type = COMPONENT_TYPE_ROOT if (id == 0) else COMPONENT_TYPE_NODE
-        return SimpleNodeFactory.create_node(type, id, desc)
-        
 
     @property
     def map(self) -> List[List[int]]:
@@ -206,7 +214,6 @@ class MindMapModel:
             pid = parent.id if (parent) else -1
             pair = (root.id, pid)
             result[level].append(pair)
-            # result[level].append((root.id, root.get_parent().id)
             for child in root.get_childern():
                 traversal(child, level + 1, result)
 
@@ -217,25 +224,16 @@ class MindMapModel:
         return result
 
     def save(self, path: str) -> bool:
-        if (os.path.exists(path)):
-            os.remove(path)
-        data = []
-        for id, node in self._components.items():
-            node_info = {}
-            node_info["id"] = node.id
-            node_info["desc"] = node.desc
-            parent = node.get_parent()
-            if (parent):
-                node_info["pid"] = parent.id
-            else:
-                node_info["pid"] = -1
-            data.append(node_info)
+        data = self._convert_to_json_format()
         print("Save", path, data)
         try:
+            if (os.path.exists(path)):
+                os.remove(path)
             with open(path, 'w') as file:
-                json.dump(content, file)
+                json.dump(data, file)
             return True
-        except:
+        except Exception as e:
+            print(e)
             print("Save failed")
             return False
 
@@ -245,30 +243,38 @@ class MindMapModel:
                 with open(path, 'r') as file:
                     data = json.load(file)
                 print("Load", path, data)
-                self._build_map_from_json(data)
+                self._build_from_json(data)
                 return True
-            except:
+            except Exception as e:
                 print("Load failed")
+                print(e)
                 return False
         else:
             return False
 
-    # TODO: Need to refactor
-    def _build_map_from_json(self, data: List) -> None:
-        self._serial_ids = -1
-        for node_info in data:
-          n = self._create_node(node_info["id"], node_info["desc"])
-          if (isinstance(n, Root)):
-              self._root = n
-          self._components[n.id] = n
-          if (n.id > self._serial_ids):
-              self._serial_ids = n.id
-        for node_info in data:
-            if (node_info["pid"] != -1):
-                n = self._components[node_info["id"]]
-                p = self._components[node_info["pid"]]
-                p.add_child(n)
-                n.set_parent(p)
+    def _convert_to_json_format(self) -> List:
+        data = []
+        for layer in self.map:
+            for pair in layer:
+                node = self._components[pair[0]]
+                info = {}
+                info["id"] = node.id
+                info["desc"] = node.desc
+                info["pid"] = pair[1]
+                data.append(info)
+        return data
+
+    def _build_from_json(self, data: List) -> None:
+        serial_ids = -1
+        for obj in data:
+            node = self._create_node(obj["id"], obj["desc"])
+            print(node.info)
+            if (self.insert_node(node, obj["pid"])):
+                if (node.id > serial_ids): serial_ids = node.id
+            else:
+                raise Exception("Build mind map from JSON failed.")
+        self._serial_ids = serial_ids
+        print("Builded mind map from JSON.")
         print(self.map)
 
 
