@@ -8,6 +8,8 @@ from model import MindMapModel, Component, Root, Node
 import os
 import sys
 
+import math
+
 
 class MapItem(QGraphicsItem):
     HEIGHT = 100
@@ -152,7 +154,6 @@ class MainWindow(QMainWindow):
 
 
         self._mind_map = MindMapModel()
-        self._node_location = {}
 
         self.update_title()
         self.show()
@@ -179,6 +180,29 @@ class MainWindow(QMainWindow):
     def draw(self):
         # self.scene.clear()
         print("map: {}".format(self._mind_map.map))
+        location_map = {}
+        map = self._mind_map.map
+        basic_r = 50
+        center = (MapItem.WIDTH / 2, MapItem.HEIGHT / 2)
+        for i, layer in enumerate(map):
+            num_of_node = len(layer)
+            for j, pair in enumerate(layer):
+                node = self._mind_map.get_node(pair[0])
+                if (node):
+                    if (len(location_map) == 0):
+                        item = MapItem(0, 0, node.info)
+                        location_map[node.id] = (0, 0, MapItem.WIDTH, MapItem.HEIGHT)
+                    else:
+                        pl = location_map[pair[1]]
+                        print(pl)
+                        left = pl[2] + 50 + ((50 + MapItem.WIDTH) * j)
+                        top = pl[3] + 50 
+                        right = left + MapItem.WIDTH
+                        bottom = top + MapItem.HEIGHT
+                        location_map[node.id] = (left, top, right, bottom)
+                        item = MapItem(left, top, node.info)
+                    self.scene.addItem(item)
+
 
 
     def insert_node_dialog(self):

@@ -149,6 +149,13 @@ class MindMapModel:
         self._components = {}
         self._serial_ids = -1
 
+
+    def get_node(self, id: int) -> Component:
+        if (not id in self._components):
+            return None
+        else:
+            return self._components[id]
+
     @property
     def root(self) -> Root:
         return self._root
@@ -195,7 +202,11 @@ class MindMapModel:
         def traversal(root: Component, level: int, result: List[List[int]]) -> None:
             if (not root): return
             if (level >= len(result)): result.append([])
-            result[level].append(root.id)
+            parent = root.get_parent()
+            pid = parent.id if (parent) else -1
+            pair = (root.id, pid)
+            result[level].append(pair)
+            # result[level].append((root.id, root.get_parent().id)
             for child in root.get_childern():
                 traversal(child, level + 1, result)
 
