@@ -168,7 +168,7 @@ class MindMapModel:
             print("MidMapModel", "Root existent")
             return False
         else:
-            self._root = self.create_node(desc)
+            #self._root = self.create_node(desc)
             print("Create MidMapModel")
             return self.insert_node(self.create_node(desc), None)
             # return self.insert_node(self._root, None)
@@ -237,12 +237,18 @@ class MindMapModel:
             print("Save failed")
             return False
 
+
+    def _reset(self) -> None:
+        self._root = None
+        self._serial_ids = -1
+
     def load(self, path: str) -> bool:
         if (os.path.exists(path)):
             try:
                 with open(path, 'r') as file:
                     data = json.load(file)
                 print("Load", path, data)
+                self._reset()
                 self._build_from_json(data)
                 return True
             except Exception as e:
