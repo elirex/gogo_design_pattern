@@ -10,6 +10,51 @@ import sys
 
 import math
 
+class MapEdge(QGraphicsItem):
+
+    def __init__(self, src_node: Component, dest_node: Component):
+        super(MapEdge,self).__init__()
+        self._src_node = src_node
+        self._dest_node = dest_node
+        self._src_point = None
+        self._dest_point = None
+        self.adjust() 
+
+        
+    def adjust(self):
+        if not self._src_node or not self._dest_node:
+            return
+        src_center = self._src_node.ellipsisCenter()
+        dest_center = self._dest_node.ellipsisCenter()
+        line=QLineF(self.mapFromItem(self._src_node, src_center.x(), src_center.y()), \
+                        self.mapFromItem(self._dest_node, dest_center.x(), dest_center.y()))
+        length = line.length()
+
+        self.prepareGeometryChange()
+
+        if length > 20.0:
+            offset = QPointF((line.dx() *10 ) / length,(line.dy() * 10) / length)
+            self._src_point = line.p1() + offset
+            self._dest_point = line.p2() - offset
+        else:
+            self._src_point = self._dest_point = line.p1()
+
+    def boundingRect(self):
+        if not self._src_node or not self._dest_node: return QRectF()
+        return QRectF(self._src_point, QSizeF(self._dest_point.x() - self._src_point.x(),
+                                              self._dest_point.y() - self._src_point.y())).normalized()
+
+    def paint(self,painter, option=None, widget=None):
+        """Paint edge on a scene"""
+        if not self._src_node or not self._dest_node: return QRectF()
+        line = QLineF(self._src_point, self._dest_point)
+        if (line.length() == 0.0): return
+        color = QColor(Qt.white)
+        painter.setPen(QPen(color,1,Qt.SolidLine,Qt.RoundCap,Qt.RoundJoin))
+        painter.drawLine(line)
+
+        # if not self.visible: color=QColor(Qt.green)
+
 
 class MapItem(QGraphicsItem):
     HEIGHT = 100
@@ -30,6 +75,9 @@ class MapItem(QGraphicsItem):
 
     def boundingRect(self):
         return self.rect
+
+    def ellipsisCenter(self):
+        return self.boundingRect().center()
 
     def __repr__(self):
         return '<MapItem: %s>' % self.desc
@@ -181,6 +229,7 @@ class MainWindow(QMainWindow):
         # self.scene.clear()
         print("map: {}".format(self._mind_map.map))
         location_map = {}
+        p = {}
         map = self._mind_map.map
         basic_r = 50
         center = (MapItem.WIDTH / 2, MapItem.HEIGHT / 2)
@@ -189,6 +238,8 @@ class MainWindow(QMainWindow):
             for j, pair in enumerate(layer):
                 node = self._mind_map.get_node(pair[0])
                 if (node):
+                    item = None
+                    edge = None
                     if (len(location_map) == 0):
                         item = MapItem(0, 0, node.info)
                         location_map[node.id] = (0, 0, MapItem.WIDTH, MapItem.HEIGHT)
@@ -201,7 +252,11 @@ class MainWindow(QMainWindow):
                         bottom = top + MapItem.HEIGHT
                         location_map[node.id] = (left, top, right, bottom)
                         item = MapItem(left, top, node.info)
+                        edge = MapEdge(item, p[pair[1]])
+                    p[node.id] = item
                     self.scene.addItem(item)
+                    if (edge != None):
+                        self.scene.addItem(edge)
 
 
 
