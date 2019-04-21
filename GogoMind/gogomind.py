@@ -4,7 +4,9 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 
-from model import MindMapModel, Component, Root, Node
+import traceback
+
+from model import CommandManager, Command, AddComponentCommand, EditComponentCommand, DeleteComponentCommand, MindMapModel, Component, Root, Node
 import os
 import sys
 
@@ -140,13 +142,13 @@ class MainWindow(QMainWindow):
 
         undo_action = QAction(QIcon(os.path.join('images', 'arrow-curve-180-left.png')), "Undo", self)
         undo_action.setStatusTip("Undo last change")
-        # undo_action.triggered.connect(self.editor.undo)
+        undo_action.triggered.connect(self.undo)
         edit_toolbar.addAction(undo_action)
         edit_menu.addAction(undo_action)
 
         redo_action = QAction(QIcon(os.path.join('images', 'arrow-curve.png')), "Redo", self)
         redo_action.setStatusTip("Redo last change")
-        # redo_action.triggered.connect(self.editor.redo)
+        redo_action.triggered.connect(self.redo)
         edit_toolbar.addAction(redo_action)
         edit_menu.addAction(redo_action)
 
@@ -176,9 +178,15 @@ class MainWindow(QMainWindow):
         edit_toolbar.addAction(selection_action)
         edit_menu.addAction(selection_action)
 
+        edit_action = QAction(QIcon(os.path.join('images', 'icon_edit.png')), "Edit a node", self)
+        edit_action.setStatusTip("Edit a node")
+        edit_action.triggered.connect(self.edit_node_dialog)
+        edit_toolbar.addAction(edit_action)
+        edit_menu.addAction(edit_action)
+
         delete_action = QAction(QIcon(os.path.join('images', 'deletion.png')), "Deletion", self)
         delete_action.setStatusTip("Deletion State")
-        # delete_action.triggered.connect(self.input_dialog)
+        delete_action.triggered.connect(self.delete_node_dialog)
         edit_toolbar.addAction(delete_action)
         edit_menu.addAction(delete_action)
 
@@ -202,89 +210,66 @@ class MainWindow(QMainWindow):
 
 
         self._mind_map = MindMapModel()
+        self._command_manager = CommandManager(self._mind_map)
 
         self.update_title()
         self.show()
 
-        ### Just for demo
-        # root = MapItem(0, 0, 'Computer <Root, ID:0>')
-        # node = MapItem(300, 0, 'OS <Node, ID:1>')
-        # node2 = MapItem(300, 150, 'Network <Node, ID:2>')
-        # line1 = QGraphicsLineItem(50, 50, 350, 50)
-        # line2 = QGraphicsLineItem(200, 50, 300, 200)
-
-        # node3 = MapItem(600, 0, 'MacOS <Node, ID:3>')
-        # line3 = QGraphicsLineItem(350, 50, 600, 50)
-        # self.scene.addItem(node3)
-        # self.scene.addItem(line3)
-
-        # self.scene.addItem(line1)
-        # self.scene.addItem(line2)
-        # self.scene.addItem(root)
-        # self.scene.addItem(node)
-        # self.scene.addItem(node2)
-        ###
-
-    def draw(self):
-        # self.scene.clear()
-        print("map: {}".format(self._mind_map.map))
-        location_map = {}
-        p = {}
-        map = self._mind_map.map
-        basic_r = 50
-        center = (MapItem.WIDTH / 2, MapItem.HEIGHT / 2)
-        for i, layer in enumerate(map):
-            num_of_node = len(layer)
-            for j, pair in enumerate(layer):
-                node = self._mind_map.get_node(pair[0])
-                if (node):
-                    item = None
-                    edge = None
-                    if (len(location_map) == 0):
-                        item = MapItem(0, 0, node.info)
-                        location_map[node.id] = (0, 0, MapItem.WIDTH, MapItem.HEIGHT)
-                    else:
-                        pl = location_map[pair[1]]
-                        print(pl)
-                        left = pl[2] + 50 + ((50 + MapItem.WIDTH) * j)
-                        top = pl[3] + 50 
-                        right = left + MapItem.WIDTH
-                        bottom = top + MapItem.HEIGHT
-                        location_map[node.id] = (left, top, right, bottom)
-                        item = MapItem(left, top, node.info)
-                        edge = MapEdge(item, p[pair[1]])
-                    p[node.id] = item
-                    self.scene.addItem(item)
-                    if (edge != None):
-                        self.scene.addItem(edge)
+    def delete_node_dialog(self):
+        id, okPressed = QInputDialog.getText(self, "Delete a node", "Node ID:", QLineEdit.Normal, "")
+        if (id):
+            try:
+                id = int(id)
+                self._command_manager.execute(DeleteComponentCommand(id))
+                self.draw()
+            except Exception as e:
+                traceback.print_exc()
 
 
+    def undo(self):
+        if (self._command_manager.undo()):
+            print("Undo succeed")
+            self.draw()
+        else:
+            print("Undo Failed")
+
+    def redo(self):
+        if (self._command_manager.redo()):
+            print("Redo succeed")
+            self.draw()
+        else:
+            print("Redo Failed")
+
+
+    def edit_node_dialog(self):
+        id, okPressed = QInputDialog.getText(self, "Edit a node", "Node ID:", QLineEdit.Normal, "")
+        desc, okPressed = QInputDialog.getText(self, "Edit a node", "Node description:", QLineEdit.Normal, "")
+        if (id and desc):
+            try:
+                id = int(id)
+                self._command_manager.execute(EditComponentCommand(id, desc))
+                self.draw()
+            except Exception as e:
+                traceback.print_exc()
+        
 
     def insert_node_dialog(self):
+        pid = -1
+        desc = None
         if (self._mind_map.is_empty()):
             desc, okPressed = QInputDialog.getText(self, "Create a root", "Root description:", QLineEdit.Normal, "")
-            if (desc):
-                if (self._mind_map.create_mind_map(desc)):
-                    print("Add {} node to map".format(self._mind_map.root.info)) 
-            else:
-                print("Descrption is empty.")
         else:
-            pid, okPressed = QInputDialog.getText(self, "Insert a node", "Node ID:", QLineEdit.Normal, "")
+            pid, okPressed = QInputDialog.getText(self, "Insert a node", "Parent node ID:", QLineEdit.Normal, "")
             desc, okPressed = QInputDialog.getText(self, "Insert a node", "Node description:", QLineEdit.Normal, "")
-            print("<pid: {}, desc: {}>".format(pid, desc))
-            if (pid and desc):
-                try:
-                    pid = int(pid)
-                    node = self._mind_map.create_node(desc)
-                    if (self._mind_map.insert_node(node, pid)):
-                        print("Add {} node to map".format(node.info))
-                    else:
-                        print("Add {} node to map is failed".format(node.info))
-                except ValueError:
-                   print("The parent id is not an integer!")
-            else:
-                print("The parent id o description is empty.")
-        self.draw()
+
+        print("<pid: {}, desc: {}>".format(pid, desc))
+        if (pid and desc):
+            try:
+                pid = int(pid)
+                self._command_manager.execute(AddComponentCommand(pid, desc))
+                self.draw()
+            except Exception as e:
+                traceback.print_exc()
 
     def dialog_critical(self, s):
         dlg = QMessageBox(self)
@@ -324,6 +309,40 @@ class MainWindow(QMainWindow):
 
     def update_title(self):
         self.setWindowTitle("%s - GogoMind" % (os.path.basename(self.path) if self.path else "Untitled"))
+
+    def draw(self):
+        self.scene.clear()
+        print("map: {}".format(self._mind_map.map))
+        location_map = {}
+        p = {}
+        map = self._mind_map.map
+        basic_r = 50
+        center = (MapItem.WIDTH / 2, MapItem.HEIGHT / 2)
+        for i, layer in enumerate(map):
+            num_of_node = len(layer)
+            for j, pair in enumerate(layer):
+                node = self._mind_map.get_node(pair[0])
+                if (node):
+                    item = None
+                    edge = None
+                    if (len(location_map) == 0):
+                        item = MapItem(0, 0, node.info)
+                        location_map[node.id] = (0, 0, MapItem.WIDTH, MapItem.HEIGHT)
+                    else:
+                        pl = location_map[pair[1]]
+                        print(pl)
+                        left = pl[2] + 50 + ((50 + MapItem.WIDTH) * j)
+                        top = pl[3] + 50 
+                        right = left + MapItem.WIDTH
+                        bottom = top + MapItem.HEIGHT
+                        location_map[node.id] = (left, top, right, bottom)
+                        item = MapItem(left, top, node.info)
+                        edge = MapEdge(item, p[pair[1]])
+                    p[node.id] = item
+                    self.scene.addItem(item)
+                    if (edge != None):
+                        self.scene.addItem(edge)
+
 
 
 if __name__ == '__main__':

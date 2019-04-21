@@ -18,18 +18,30 @@ class Component(abc.ABC):
         self._children = []
         self._siblings = []
         self._parent = None
-        
-   
+        self._is_delete = False
+    
+    @property
+    def is_delete(self) -> bool:
+        return self._is_delete
+
+    def delete(self, deleted: bool, with_child: bool=False) -> None:
+        self._is_delete = deleted
+        if (with_child):
+            for child in self._children:
+                child.delete(deleted, with_child)
+
     @property
     def id(self) -> int:
         return self._id
-
    
     @property
     def desc(self) -> str:
         return self._desc
 
-    
+    @desc.setter
+    def desc(self, desc: str) -> None:
+        self._desc = desc
+
     def get_parent(self) -> 'Component':
         return self._parent
 
@@ -131,7 +143,6 @@ class Node(Component):
     def get_siblings(self) -> List[Component]:
         return super().get_siblings()
 
-
     def set_parent(self, parent:Component) -> bool:
         return super().set_parent(parent)
 
@@ -149,19 +160,31 @@ class MindMapModel:
         self._components = {}
         self._serial_ids = -1
 
+    def increase_id(self) -> None:
+        self._serial_ids += 1
+    
+    def decrease_id(self) -> None:
+        self._serial_ids -= 1
 
     def get_node(self, id: int) -> Component:
         if (not id in self._components):
             return None
         else:
-            return self._components[id]
+            node = self._components[id]
+            if (node.is_delete):
+                return None
+            else:
+                return self._components[id]
 
     @property
     def root(self) -> Root:
         return self._root
 
     def is_empty(self) -> bool:
-        return self._root == None
+        if (self._root == None or self._root.is_delete):
+            return True
+        else:
+            return False
 
     def create_mind_map(self, desc:str) -> bool:
         if (self._root):
@@ -170,20 +193,20 @@ class MindMapModel:
         else:
             #self._root = self.create_node(desc)
             print("Create MidMapModel")
-            return self.insert_node(self.create_node(desc), None)
+            return self.insert_node(self.create_node(desc))
             # return self.insert_node(self._root, None)
 
     def create_node(self, desc:str) -> Component:
-        self._serial_ids += 1
+        self.increase_id()
         return self._create_node(self._serial_ids, desc)
 
     def _create_node(self, id:int, desc:str) -> Component:
         type = COMPONENT_TYPE_ROOT if (id == 0) else COMPONENT_TYPE_NODE
         return SimpleNodeFactory.create_node(type, id, desc)
 
-    def insert_node(self, node: Component, pid:int) -> bool:
+    def insert_node(self, node: Component, pid:int=None) -> bool:
         if (isinstance(node, Root)):
-            if (self._root):
+            if (self._root and not self._root.is_delete):
                 raise Exception("Root exists.")
                 return False
             else:
@@ -192,18 +215,24 @@ class MindMapModel:
             if (not node): 
                 raise Exception("Node must by not None.")
                 return False
-            if (pid not in self._components): 
+            parent = self._components[pid]
+            if (not parent):
                 raise Exception("Parent not exists.")
                 return False
-            if (node.id in self._components): 
+            if (not self.get_node(node.id)):
+                parent.add_child(node)
+                node.set_parent(parent)
+            else:
                 raise Exception("Node({}) exists.".format(node.id))
                 return False
-            parent = self._components[pid]
-            parent.add_child(node)
-            node.set_parent(parent)
-
         self._components[node.id] = node
         return True
+
+    def remove_node(self, node: Component, with_child: bool=False) -> bool:
+        if (node and not node.is_delete):
+            node.delete(True, with_child)
+            return True
+        return False
 
     @property
     def map(self) -> List[List[int]]:
@@ -213,12 +242,14 @@ class MindMapModel:
             parent = root.get_parent()
             pid = parent.id if (parent) else -1
             pair = (root.id, pid)
+            print(pair)
             result[level].append(pair)
             for child in root.get_childern():
-                traversal(child, level + 1, result)
+                if (not child.is_delete):
+                    traversal(child, level + 1, result)
 
         result = []
-        if (self._root == None):
+        if (self.is_empty()):
             return result
         traversal(self._root, 0, result)
         return result
@@ -293,4 +324,130 @@ class SimpleNodeFactory:
         else:
             return Node(id, desc)
 
+class Command(abc.ABC):
 
+    @abc.abstractmethod
+    def execute(self, mind_map: MindMapModel) -> bool:
+        return False
+
+    @abc.abstractmethod
+    def unexecute(self, mind_map: MindMapModel) -> bool:
+        return False
+
+class AddComponentCommand(Command):
+
+    def __init__(self, pid: int, desc: str):
+        self._pid = pid
+        self._desc = desc
+        self._node = None
+
+    def execute(self, mind_map: MindMapModel) -> bool:
+        if (self._node):
+            self._node.delete(False)
+            mind_map.increase_id()
+            return True
+        else:
+            node = mind_map.create_node(self._desc)
+            try:
+                if (mind_map.insert_node(node, self._pid)):
+                    self._node = node
+                    print("Add {} node to map".format(node.info))
+                    return True
+                else:
+                    print("Add {} node to map is failed".format(node.info))
+            except Exception as e:
+                print(e)
+        return False
+
+    def unexecute(self, mind_map: MindMapModel) -> bool:
+        if (self._node):
+            if (mind_map.remove_node(self._node)):
+                mind_map.decrease_id()           
+                return True
+        return False
+
+
+class EditComponentCommand(Command):
+
+    def __init__(self, id: int, desc: str):
+        self._id = id
+        self._new_desc = desc
+
+    def execute(self, mind_map: MindMapModel) -> bool:
+        return self._edit(mind_map)
+    
+    def unexecute(self, mind_map: MindMapModel) -> bool:
+        return self._edit(mind_map)
+
+    def _edit(self, mind_map: MindMapModel) -> bool:
+        node = mind_map.get_node(self._id)
+        if (node):
+            temp_desc = node.desc
+            node.desc = self._new_desc
+            self._new_desc = temp_desc
+            print("Edited the description of the node ({}) ({} - > {})".format(self._id, self._new_desc, node.desc))
+            return True
+        else:
+            print("Not found node ({})".format(self._id))
+            return False
+
+
+class DeleteComponentCommand(Command):
+    
+    def __init__(self, id: int):
+        self._id = id
+        self._node = None
+
+    def execute(self, mind_map: MindMapModel) -> bool:
+        node = mind_map.get_node(self._id)
+        if (mind_map.remove_node(node, True)):
+            self._node = node
+            return True
+        else:
+            return False
+    
+    def unexecute(self, mind_map: MindMapModel) -> bool:
+        if (self._node):
+            self._node.delete(False, True)
+            return True
+        else:
+            return False
+
+class CommandManager:
+
+    def __init__(self, mind_map: MindMapModel):
+        self._mind_map = mind_map
+        self._redo_commands = []
+        self._undo_commands = []
+
+    def execute(self, command: Command) -> bool:
+        if (command):
+            if (command.execute(self._mind_map)):
+                self._redo_commands.clear()
+                self._undo_commands.append(command)
+                return True
+        else:
+            raise ValueError("Command should not be none.")
+        return False
+
+    def redo(self) -> bool:
+        if (len(self._redo_commands) == 0):
+            print("Redo list is empty")
+        else:
+            command = self._redo_commands.pop()
+            if (command.execute(self._mind_map)):
+                self._undo_commands.append(command)
+                return True
+        return False
+
+    def undo(self) -> bool:
+        if (len(self._undo_commands) == 0):
+            print("Undo list is empty.")
+        else:
+            command = self._undo_commands.pop()
+            if (command.unexecute(self._mind_map)):
+                self._redo_commands.append(command)
+                return True
+        return False
+
+    
