@@ -51,7 +51,7 @@ class MapEdge(QGraphicsItem):
         if not self._src_node or not self._dest_node: return QRectF()
         line = QLineF(self._src_point, self._dest_point)
         if (line.length() == 0.0): return
-        color = QColor(Qt.white)
+        color = QColor(Qt.black)
         painter.setPen(QPen(color,1,Qt.SolidLine,Qt.RoundCap,Qt.RoundJoin))
         painter.drawLine(line)
 
