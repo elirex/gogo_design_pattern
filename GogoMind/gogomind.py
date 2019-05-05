@@ -6,11 +6,95 @@ from PyQt5.QtCore import *
 
 import traceback
 
-from model import CommandManager, Command, AddComponentCommand, EditComponentCommand, DeleteComponentCommand, MindMapModel, Component, Root, Node
+from core import *
+
+from model import Command, AddComponentCommand, EditComponentCommand, DeleteComponentCommand
+from model import MindMapModel, CommandManager
+from model import Component, Root, Node
+
 import os
 import sys
 
 import math
+
+class State(abc.ABC):
+    
+    def __init__(self):
+        self._context = None
+
+    def set_context(self, context) -> None:
+        self._context = context
+
+    @abc.abstractmethod
+    def mouse_press_event(self) -> None:
+        print(str(self.__class__) + " mouse_press_event") 
+
+class PointerState(State):
+
+    def mouse_press_event(self, node_id: int) -> None:
+        super().mouse_press_event()
+
+class EditState(State):
+
+    def mouse_press_event(self, node_id: int) -> None:
+        super().mouse_press_event()
+        title = "Edit Node {}'s description".format(node_id)
+        desc, okPressed = QInputDialog.getText(self._context.main_window, title, "Node description:", QLineEdit.Normal, "")
+        if (desc):
+            try:
+                self._context.command_manager.execute(EditComponentCommand(node_id, desc))
+                self._context.main_window.draw()
+            except Exception as e:
+                traceback.print_exc()
+
+class DeleteState(State):
+
+    def mouse_press_event(self, node_id: int) -> None:
+        super().mouse_press_event()
+        title = "Delete Node"
+        message = "Do you want to delete Node {}?".format(node_id)
+        reply = QMessageBox.information(self._context.main_window, 
+                title,
+                message,
+                QMessageBox.Yes | QMessageBox.No)
+        if (node_id != None and reply == QMessageBox.Yes):
+            try:
+                self._context.command_manager.execute(DeleteComponentCommand(node_id))
+                self._context.main_window.draw()
+            except Exception as e:
+                traceback.print_exc()
+
+class PresentationModel:
+
+    def __init__(self, main_window, command_manager: CommandManager):
+        self._state = None
+        self.state = PointerState()
+        self._command_manager = command_manager
+        self._main_window =  main_window
+
+    @property
+    def command_manager(self) -> CommandManager:
+        return self._command_manager
+
+    @property
+    def main_window(self):
+        return self._main_window
+
+    @property
+    def state(self) -> State:
+        return self._state
+    
+    @state.setter
+    def state(self, state) -> None:
+        print("set state as " + str(state.__class__))
+        self._state = state
+        self._state.set_context(self)
+
+    def mouse_press_event(self, id: int) -> None:
+        print(str(self.__class__) + " mouse_press_event")
+        print("selected node {}".format(id))
+        self._state.mouse_press_event(id)
+
 
 class MapEdge(QGraphicsItem):
 
@@ -62,15 +146,31 @@ class MapItem(QGraphicsItem):
     HEIGHT = 100
     WIDTH = 200
 
-    def __init__(self, x, y, desc, *args, **kwargs):
+    def __init__(self, x, y, id, desc, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.x = x
         self.y = y
         self.desc = desc
+        self._id = id
         self.rect = QRectF(x, y, self.WIDTH, self.HEIGHT)
         self.setZValue(10)
+        self._selected = False
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def selected(self) -> bool:
+        return self._selected
+
+    @selected.setter
+    def selected(self, value: bool) -> None:
+        self._selected = value
 
     def paint(self, QPainter: QPainter, QStyleOptionGraphicsItem, widget=None):
+        if self._selected:
+            QPainter.setPen(QColor(Qt.red))
         QPainter.fillRect(self.rect, QBrush(Qt.white))
         QPainter.drawRect(self.rect)
         QPainter.drawText(self.rect, Qt.AlignCenter, self.desc)
@@ -87,11 +187,34 @@ class MapItem(QGraphicsItem):
 
 class MapScene(QGraphicsScene):
 
+    _selected_item = None
+    _presentation_model = None
+
+    @property
+    def selected_item(self):
+        return self._selected_item
+
+    def set_presentation_model(self, model) -> None:
+        self._presentation_model = model
+
     def mousePressEvent(self, QGraphicsSceneMouseEvent):
         point: QPointF = QGraphicsSceneMouseEvent.scenePos()
         item = self.itemAt(point.x(), point.y(), QTransform())
         print(point)
         print(item)
+        self.reset()
+
+        if (item and isinstance(item, MapItem)):
+            item._selected = True
+            self._selected_item = item
+            self.update()
+            self._presentation_model.mouse_press_event(self._selected_item.id)
+
+    def reset(self) -> None:
+        if (self._selected_item):
+            self._selected_item.selected = False
+            self._selected_item = None
+            self.update()
 
 
 class MainWindow(QMainWindow):
@@ -102,9 +225,6 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         self.scene = MapScene()
         self.scene_view = QGraphicsView(self.scene)
-
-
-
         # self.path holds the path of the currently open file.
         # If none, we haven't got a file open yet (or creating new).
         self.path = None
@@ -174,57 +294,120 @@ class MainWindow(QMainWindow):
 
         selection_action = QAction(QIcon(os.path.join('images', 'selection.png')), "Selection", self)
         selection_action.setStatusTip("Selection State")
-        # selection_action.triggered.connect(self.editor.paste)
+        selection_action.triggered.connect(self._pressed_selection_action)
         edit_toolbar.addAction(selection_action)
         edit_menu.addAction(selection_action)
+        self._selection_action = selection_action
 
         edit_action = QAction(QIcon(os.path.join('images', 'icon_edit.png')), "Edit a node", self)
         edit_action.setStatusTip("Edit a node")
-        edit_action.triggered.connect(self.edit_node_dialog)
+        # edit_action.triggered.connect(self.edit_node_dialog)
+        edit_action.triggered.connect(self._pressed_edit_action)
         edit_toolbar.addAction(edit_action)
         edit_menu.addAction(edit_action)
+        self._edit_action = edit_action
 
         delete_action = QAction(QIcon(os.path.join('images', 'deletion.png')), "Deletion", self)
         delete_action.setStatusTip("Deletion State")
-        delete_action.triggered.connect(self.delete_node_dialog)
+        # delete_action.triggered.connect(self.delete_node_dialog)
+        delete_action.triggered.connect(self._pressed_delete_action)
         edit_toolbar.addAction(delete_action)
         edit_menu.addAction(delete_action)
+        self._delete_action = delete_action
 
         sibling_action = QAction(QIcon(os.path.join('images', 'parent.png')), "Sibling", self)
         sibling_action.setStatusTip("Add Sibling Node")
-        # sibling_action.triggered.connect(self.editor.paste)
+        sibling_action.triggered.connect(self._pressed_sibling_action)
         edit_toolbar.addAction(sibling_action)
         edit_menu.addAction(sibling_action)
+        self._sibling_action = sibling_action
 
         child_action = QAction(QIcon(os.path.join('images', 'child.png')), "Child", self)
         child_action.setStatusTip("Add Child Node")
-        # child_action.triggered.connect(self.editor.paste)
+        child_action.triggered.connect(self._pressed_child_action)
         edit_toolbar.addAction(child_action)
         edit_menu.addAction(child_action)
+        self._child_action = child_action
 
         insert_action = QAction(QIcon(os.path.join('images', 'plus.png')), "Insert a node", self)
         insert_action.setStatusTip("Insert a node")
-        insert_action.triggered.connect(self.insert_node_dialog)
+        insert_action.triggered.connect(self._pressed_insert_node)
         edit_toolbar.addAction(insert_action)
         edit_menu.addAction(insert_action)
 
+        self._mind_map = None
+        self._command_manager = None
+        self._presentation_model = None
+        self._init_mind_map()
 
-        self._mind_map = MindMapModel()
-        self._command_manager = CommandManager(self._mind_map)
-
+        self.scene.set_presentation_model(self._presentation_model)
         self.update_title()
         self.show()
 
-    def delete_node_dialog(self):
-        id, okPressed = QInputDialog.getText(self, "Delete a node", "Node ID:", QLineEdit.Normal, "")
-        if (id):
+
+
+    def _init_mind_map(self) -> None:
+        self._mind_map = MindMapModel()
+        self._command_manager = CommandManager(self._mind_map)
+        self._presentation_model = PresentationModel(self, self._command_manager) 
+        self._pressed_selection_action()
+        self._insert_node(-1, "Root")
+
+    def _pressed_delete_action(self):
+        self._presentation_model.state = DeleteState()
+        self._selection_action.setEnabled(False)
+        self._edit_action.setEnabled(False)
+
+    def _pressed_edit_action(self):
+        self._presentation_model.state = EditState()
+        self._selection_action.setEnabled(False)
+        self._delete_action.setEnabled(False)
+
+    def _pressed_selection_action(self):
+        self._presentation_model.state = PointerState()
+        self._edit_action.setEnabled(False)
+        self._delete_action.setEnabled(False)
+
+    def _pressed_child_action(self):
+        state = self._is_pointer_state()
+        if (state):
+            node = self._get_selected_node()
+            if (node):
+                title = "Insert a child to Node {}".format(node.id)
+                desc, okPressed = QInputDialog.getText(self, title, "Node description:", QLineEdit.Normal, "")
+                self._insert_node(node.id, desc)
+
+    def _pressed_sibling_action(self):
+        state = self._is_pointer_state()
+        if (state):
+            node = self._get_selected_node()
+            if (node):
+                title = "Insert a sliging to Node {}".format(node.id)
+                desc, okPressed = QInputDialog.getText(self, title, "Node description:", QLineEdit.Normal, "")
+                self._insert_node(node.get_parent().id, desc)
+
+    def _get_selected_node(self) -> Component:
+        selected_item = self.scene.selected_item
+        if (selected_item):
+            return self._mind_map.get_node(selected_item.id)
+        else:
+            return None
+
+    def _is_pointer_state(self) -> State:
+        state = self._presentation_model.state
+        if (isinstance(state, PointerState)):
+            return state
+        else:
+            return None
+
+    def _insert_node(self, pid: int, desc: str) -> None:
+        print("<pid: {}, desc: {}>".format(pid, desc))
+        if (pid != None and desc != None):
             try:
-                id = int(id)
-                self._command_manager.execute(DeleteComponentCommand(id))
+                self._command_manager.execute(AddComponentCommand(pid, desc))
                 self.draw()
             except Exception as e:
                 traceback.print_exc()
-
 
     def undo(self):
         if (self._command_manager.undo()):
@@ -240,20 +423,7 @@ class MainWindow(QMainWindow):
         else:
             print("Redo Failed")
 
-
-    def edit_node_dialog(self):
-        id, okPressed = QInputDialog.getText(self, "Edit a node", "Node ID:", QLineEdit.Normal, "")
-        desc, okPressed = QInputDialog.getText(self, "Edit a node", "Node description:", QLineEdit.Normal, "")
-        if (id and desc):
-            try:
-                id = int(id)
-                self._command_manager.execute(EditComponentCommand(id, desc))
-                self.draw()
-            except Exception as e:
-                traceback.print_exc()
-        
-
-    def insert_node_dialog(self):
+    def _pressed_insert_node(self):
         pid = -1
         desc = None
         if (self._mind_map.is_empty()):
@@ -261,15 +431,13 @@ class MainWindow(QMainWindow):
         else:
             pid, okPressed = QInputDialog.getText(self, "Insert a node", "Parent node ID:", QLineEdit.Normal, "")
             desc, okPressed = QInputDialog.getText(self, "Insert a node", "Node description:", QLineEdit.Normal, "")
+        self._insert_node(pid, desc)
 
-        print("<pid: {}, desc: {}>".format(pid, desc))
-        if (pid and desc):
-            try:
-                pid = int(pid)
-                self._command_manager.execute(AddComponentCommand(pid, desc))
-                self.draw()
-            except Exception as e:
-                traceback.print_exc()
+    def _reset(self):
+        self._selection_action.setEnabled(True)
+        self._edit_action.setEnabled(True)
+        self._delete_action.setEnabled(True)
+        self.scene.reset()
 
     def dialog_critical(self, s):
         dlg = QMessageBox(self)
@@ -310,6 +478,11 @@ class MainWindow(QMainWindow):
     def update_title(self):
         self.setWindowTitle("%s - GogoMind" % (os.path.basename(self.path) if self.path else "Untitled"))
 
+    def keyPressEvent(self, event):
+        if (event.key() == Qt.Key_Escape):
+            print("Pressed ESC")
+            self._reset()
+
     def draw(self):
         self.scene.clear()
         print("map: {}".format(self._mind_map.map))
@@ -326,7 +499,7 @@ class MainWindow(QMainWindow):
                     item = None
                     edge = None
                     if (len(location_map) == 0):
-                        item = MapItem(0, 0, node.info)
+                        item = MapItem(0, 0, node.id,node.info)
                         location_map[node.id] = (0, 0, MapItem.WIDTH, MapItem.HEIGHT)
                     else:
                         pl = location_map[pair[1]]
@@ -336,14 +509,33 @@ class MainWindow(QMainWindow):
                         right = left + MapItem.WIDTH
                         bottom = top + MapItem.HEIGHT
                         location_map[node.id] = (left, top, right, bottom)
-                        item = MapItem(left, top, node.info)
+                        item = MapItem(left, top, node.id, node.info)
                         edge = MapEdge(item, p[pair[1]])
                     p[node.id] = item
                     self.scene.addItem(item)
                     if (edge != None):
                         self.scene.addItem(edge)
 
+    # def delete_node_dialog(self):
+    #     id, okPressed = QInputDialog.getText(self, "Delete a node", "Node ID:", QLineEdit.Normal, "")
+    #     if (id):
+    #         try:
+    #             id = int(id)
+    #             self._command_manager.execute(DeleteComponentCommand(id))
+    #             self.draw()
+    #         except Exception as e:
+    #             traceback.print_exc()
 
+    # def edit_node_dialog(self):
+    #     id, okPressed = QInputDialog.getText(self, "Edit a node", "Node ID:", QLineEdit.Normal, "")
+    #     desc, okPressed = QInputDialog.getText(self, "Edit a node", "Node description:", QLineEdit.Normal, "")
+    #     if (id and desc):
+    #         try:
+    #             id = int(id)
+    #             self._command_manager.execute(EditComponentCommand(id, desc))
+    #             self.draw()
+    #         except Exception as e:
+    #             traceback.print_exc()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

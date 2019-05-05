@@ -53,7 +53,6 @@ class Component(abc.ABC):
             self._children.append(node)
             return True
 
-
     @abc.abstractmethod
     def add_sibling(self, node: 'Component') -> bool:
         if (node in self._siblings or self == node):
@@ -62,17 +61,14 @@ class Component(abc.ABC):
             self._siblings.append(Component)
             return True
 
-    
     @abc.abstractmethod
     def get_childern(self) -> List['Component']:
         return self._children
 
-    
     @abc.abstractmethod
     def get_siblings(self) -> List['Component']:
         return self._siblings
 
-   
     @abc.abstractmethod
     def set_parent(self, parent:'Component') -> bool:
         if (not self._parent and self != parent):
@@ -91,26 +87,21 @@ class Root(Component):
 
     def __init__(self, id:int, desc:str):
         super().__init__(id, desc)
-
     
     def add_child(self, node:Component) -> bool:
         if (isinstance(node, Node)):
             return super().add_child(node) 
         else:
             return False
-        
     
     def add_sibling(self, node:Component) -> None:
         raise ValueError("Root cannot add sibling.")
 
-
     def get_childern(self) -> List[Component]:
         return super().get_childern()
 
-
     def get_siblings(self) -> None:
         raise ValueError("Root hasn't any siblings.")
-
 
     def set_parent(self, parent: Component) -> None:
         raise ValueError("Root hasn't the parent.")
@@ -127,18 +118,14 @@ class Node(Component):
     def __init__(self, id:int, desc:str):
         super().__init__(id, desc)
 
-
     def add_child(self, node:Component) -> bool:
         return super().add_child(node) 
         
-    
     def add_sibling(self, node:Component) -> bool:
         return super().add_sibling(node)
 
-
     def get_childern(self) -> List[Component]:
         return super().get_childern()
-
 
     def get_siblings(self) -> List[Component]:
         return super().get_siblings()
@@ -162,9 +149,13 @@ class MindMapModel:
 
     def increase_id(self) -> None:
         self._serial_ids += 1
+        log = "[{}][increase_id] current serial_ids = {}".format(self.__class__, self._serial_ids)
+        print(log)
     
     def decrease_id(self) -> None:
         self._serial_ids -= 1
+        log = "[{}][decrease_id] current serial_ids = {}".format(self.__class__, self._serial_ids)
+        print(log)
 
     def get_node(self, id: int) -> Component:
         if (not id in self._components):
@@ -191,10 +182,8 @@ class MindMapModel:
             print("MidMapModel", "Root existent")
             return False
         else:
-            #self._root = self.create_node(desc)
             print("Create MidMapModel")
             return self.insert_node(self.create_node(desc))
-            # return self.insert_node(self._root, None)
 
     def create_node(self, desc:str) -> Component:
         self.increase_id()
@@ -268,10 +257,10 @@ class MindMapModel:
             print("Save failed")
             return False
 
-
-    def _reset(self) -> None:
+    def reset(self) -> None:
         self._root = None
         self._serial_ids = -1
+        self._components.clear()
 
     def load(self, path: str) -> bool:
         if (os.path.exists(path)):
@@ -279,7 +268,7 @@ class MindMapModel:
                 with open(path, 'r') as file:
                     data = json.load(file)
                 print("Load", path, data)
-                self._reset()
+                self.reset()
                 self._build_from_json(data)
                 return True
             except Exception as e:
@@ -288,6 +277,12 @@ class MindMapModel:
                 return False
         else:
             return False
+
+    def get_snapshot(self) -> List:
+        return self._convert_to_json_format()
+
+    def restore_from_snapshot(self, snapshot: List) -> None:
+        self._build_from_json(snapshot)
 
     def _convert_to_json_format(self) -> List:
         data = []
@@ -340,12 +335,17 @@ class AddComponentCommand(Command):
         self._pid = pid
         self._desc = desc
         self._node = None
+        self._snapshot = None
 
     def execute(self, mind_map: MindMapModel) -> bool:
         if (self._node):
-            self._node.delete(False)
-            mind_map.increase_id()
-            return True
+            if (isinstance(self._node, Root)):
+                mind_map.restore_from_snapshot(self._snapshot)
+                return True
+            else:
+                self._node.delete(False)
+                mind_map.increase_id()
+                return True
         else:
             node = mind_map.create_node(self._desc)
             try:
@@ -361,10 +361,17 @@ class AddComponentCommand(Command):
 
     def unexecute(self, mind_map: MindMapModel) -> bool:
         if (self._node):
-            if (mind_map.remove_node(self._node)):
+            if (isinstance(self._node, Root)):
+                self._snapshot = mind_map.get_snapshot()
+                mind_map.reset()
+                return True
+            elif (mind_map.remove_node(self._node)):
                 mind_map.decrease_id()           
                 return True
         return False
+
+    def __repr__(self):
+        return "[{}] Node {}".format(self.__class__, self._node.id)
 
 
 class EditComponentCommand(Command):
@@ -391,27 +398,42 @@ class EditComponentCommand(Command):
             print("Not found node ({})".format(self._id))
             return False
 
+    def __repr__(self):
+        return "[{}] Node {}".format(self.__class__, self._id)
+
 
 class DeleteComponentCommand(Command):
     
     def __init__(self, id: int):
         self._id = id
         self._node = None
+        self._snapshot = None
 
     def execute(self, mind_map: MindMapModel) -> bool:
         node = mind_map.get_node(self._id)
-        if (mind_map.remove_node(node, True)):
+        if (isinstance(node, Root)):
             self._node = node
+            self._snapshot = mind_map.get_snapshot()
+            mind_map.reset()
             return True
         else:
-            return False
+            if (mind_map.remove_node(node, True)):
+                self._node = node
+                return True
+        return False
     
     def unexecute(self, mind_map: MindMapModel) -> bool:
-        if (self._node):
-            self._node.delete(False, True)
+        if (isinstance(self._node, Root)):
+            mind_map.restore_from_snapshot(self._snapshot)
             return True
         else:
-            return False
+            if (self._node):
+                self._node.delete(False, True)
+                return True
+        return False
+
+    def __repr__(self):
+        return "[{}] Node {}".format(self.__class__, self._id)
 
 class CommandManager:
 
@@ -425,6 +447,7 @@ class CommandManager:
             if (command.execute(self._mind_map)):
                 self._redo_commands.clear()
                 self._undo_commands.append(command)
+                self.info()
                 return True
         else:
             raise ValueError("Command should not be none.")
@@ -437,6 +460,7 @@ class CommandManager:
             command = self._redo_commands.pop()
             if (command.execute(self._mind_map)):
                 self._undo_commands.append(command)
+                self.info()
                 return True
         return False
 
@@ -447,7 +471,11 @@ class CommandManager:
             command = self._undo_commands.pop()
             if (command.unexecute(self._mind_map)):
                 self._redo_commands.append(command)
+                self.info()
                 return True
         return False
 
-    
+    def info(self):
+        print("Undo list: {}".format(self._undo_commands))
+        print("redo list: {}".format(self._redo_commands))
+
