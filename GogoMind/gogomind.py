@@ -66,9 +66,13 @@ class DeleteState(State):
 
 class PresentationModel:
 
+    POINTER_STATE = PointerState()
+    EDIT_STATE = EditState()
+    DELETE_STATE = DeleteState()
+
     def __init__(self, main_window, command_manager: CommandManager):
         self._state = None
-        self.state = PointerState()
+        self._state = PointerState()
         self._command_manager = command_manager
         self._main_window =  main_window
 
@@ -354,19 +358,28 @@ class MainWindow(QMainWindow):
         self._insert_node(-1, "Root")
 
     def _pressed_delete_action(self):
-        self._presentation_model.state = DeleteState()
-        self._selection_action.setEnabled(False)
-        self._edit_action.setEnabled(False)
+        self._presentation_model.state = PresentationModel.DELETE_STATE
+        self.enable_selection_action(False)
+        self.enable_edit_action(False)
 
     def _pressed_edit_action(self):
-        self._presentation_model.state = EditState()
-        self._selection_action.setEnabled(False)
-        self._delete_action.setEnabled(False)
+        self._presentation_model.state = PresentationModel.EDIT_STATE
+        self.enable_selection_action(False)
+        self.enable_delete_action(False)
 
     def _pressed_selection_action(self):
-        self._presentation_model.state = PointerState()
-        self._edit_action.setEnabled(False)
-        self._delete_action.setEnabled(False)
+        self._presentation_model.state = PresentationModel.POINTER_STATE
+        self.enable_edit_action(False)
+        self.enable_delete_action(False)
+
+    def enable_edit_action(self, enable: bool) -> None:
+        self._edit_action.setEnabled(enable)
+
+    def enable_delete_action(self, enable: bool) -> None:
+        self._delete_action.setEnabled(enable)
+
+    def enable_selection_action(self, enable: bool) -> None:
+        self._selection_action.setEnabled(enable)
 
     def _pressed_child_action(self):
         state = self._is_pointer_state()
