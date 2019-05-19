@@ -8,9 +8,10 @@ import traceback
 
 from core import *
 
-from model import Command, AddComponentCommand, EditComponentCommand, DeleteComponentCommand
+from model import Command, AddComponentCommand, EditComponentCommand, DeleteComponentCommand, PasteComponentCommand
 from model import MindMapModel, CommandManager
 from model import Component, Root, Node
+from model import traversal
 
 import os
 import sys
@@ -75,6 +76,15 @@ class PresentationModel:
         self._state = PointerState()
         self._command_manager = command_manager
         self._main_window =  main_window
+        self._clone_node = None
+
+    @property
+    def clone_node(self) -> Component:
+        return self._clone_node
+
+    @clone_node.setter
+    def clone_node(self, clone_node) -> None:
+        self._clone_node = clone_node
 
     @property
     def command_manager(self) -> CommandManager:
@@ -286,13 +296,13 @@ class MainWindow(QMainWindow):
 
         copy_action = QAction(QIcon(os.path.join('images', 'document-copy.png')), "Copy", self)
         copy_action.setStatusTip("Copy selected node")
-        # copy_action.triggered.connect(self.editor.copy)
+        copy_action.triggered.connect(self._pressed_copy_action)
         edit_toolbar.addAction(copy_action)
         edit_menu.addAction(copy_action)
 
         paste_action = QAction(QIcon(os.path.join('images', 'clipboard-paste-document-text.png')), "Paste", self)
         paste_action.setStatusTip("Paste from clipboard")
-        # paste_action.triggered.connect(self.editor.paste)
+        paste_action.triggered.connect(self._pressed_paste_action)
         edit_toolbar.addAction(paste_action)
         edit_menu.addAction(paste_action)
 
@@ -398,6 +408,32 @@ class MainWindow(QMainWindow):
                 title = "Insert a sliging to Node {}".format(node.id)
                 desc, okPressed = QInputDialog.getText(self, title, "Node description:", QLineEdit.Normal, "")
                 self._insert_node(node.get_parent().id, desc)
+
+    def _pressed_copy_action(self):
+        state = self._is_pointer_state()
+        if (state):
+            node = self._get_selected_node()
+            if (node):
+                clone_node = node.clone()
+                self._presentation_model.clone_node = clone_node
+                print("Clone Node")
+                result = []
+                traversal(clone_node, 0, result)
+                print(result)
+
+    def _pressed_paste_action(self):
+        state = self._is_pointer_state()
+        if (state):
+            node = self._get_selected_node()
+            clone_node = self._presentation_model.clone_node
+            if (node and clone_node):
+                print("Paste node")
+                result = []
+                traversal(clone_node, 0, result)
+                print(result)
+                self._command_manager.execute(PasteComponentCommand(node.id, clone_node))
+                self.draw()
+
 
     def _get_selected_node(self) -> Component:
         selected_item = self.scene.selected_item

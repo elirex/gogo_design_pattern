@@ -9,6 +9,18 @@ __all__ = ["Component", "Root", "Node"]
 COMPONENT_TYPE_ROOT = 0
 COMPONENT_TYPE_NODE = 1
 
+def traversal(root: 'Component', level: int, result: List[List[int]]) -> None:
+    if (not root): return
+    if (level >= len(result)): result.append([])
+    parent = root.get_parent()
+    pid = parent.id if (parent) else -1
+    pair = (root.id, pid)
+    print(pair)
+    result[level].append(pair)
+    for child in root.get_childern():
+        if (not child.is_delete):
+            traversal(child, level + 1, result)
+
 
 class Component(abc.ABC):
 
@@ -19,6 +31,8 @@ class Component(abc.ABC):
         self._siblings = []
         self._parent = None
         self._is_delete = False
+
+    
     
     @property
     def is_delete(self) -> bool:
@@ -33,6 +47,10 @@ class Component(abc.ABC):
     @property
     def id(self) -> int:
         return self._id
+    
+    @id.setter
+    def id(self, id) -> None:
+        self._id = id
    
     @property
     def desc(self) -> str:
@@ -81,6 +99,16 @@ class Component(abc.ABC):
     @abc.abstractmethod
     def info(self) -> Dict[str, str]:
         return {"desc": self._desc, "id": str(self._id)}
+
+    def clone(self) -> 'Component':
+        clone_node = Node(self._id, self._desc)
+        clone_node.set_parent(self.get_parent())
+        for child in self._children:
+            if (not child.is_delete):
+                clone_node.add_child(child.clone())
+        for child in clone_node.get_childern():
+            child.set_parent(clone_node)
+        return clone_node
 
 
 class Root(Component):
@@ -146,6 +174,14 @@ class MindMapModel:
         self._root = None
         self._components = {}
         self._serial_ids = -1
+
+    @property
+    def serial_id(self) -> int:
+        return self._serial_ids
+
+    @serial_id.setter
+    def serial_id(self, id: int) -> None: 
+        self._serial_ids = id
 
     def increase_id(self) -> None:
         self._serial_ids += 1
@@ -434,6 +470,48 @@ class DeleteComponentCommand(Command):
 
     def __repr__(self):
         return "[{}] Node {}".format(self.__class__, self._id)
+
+class PasteComponentCommand(Command):
+
+    def __init__(self, pid: int, node: Component):
+        self._pid = pid
+        self._clone_node = node
+        self._after_paste_id = -1
+        self._before_paste_id = -1
+        self._node = None
+
+    def execute(self, mind_map: MindMapModel) -> bool:
+        def insert_node(node: Component, pid: int):
+            new_node = mind_map.create_node(node.desc)
+            if (mind_map.insert_node(new_node, pid)):
+                print("Paste {} node to map".format(new_node.info))
+                for child in node.get_childern():
+                    if (not insert_node(child, new_node.id)):
+                        return None
+                return new_node
+            return None 
+        if (self._node):
+            self._node.delete(False)
+            mind_map.serial_id = self._after_paste_id
+            return True
+        elif (self._clone_node):
+            self._before_paste_id = mind_map.serial_id
+            self._node = insert_node(self._clone_node, self._pid)
+            self._after_paste_id = mind_map.serial_id
+            self._clone_node = None
+            return True
+        return False
+
+    def unexecute(self, mind_map: MindMapModel) -> bool:
+        if (self._node):
+            if (mind_map.remove_node(self._node, True)):
+                mind_map.serial_id = self._before_paste_id
+                return True
+        return False
+
+    def __repr__(self):
+        return "[{}]".format(self.__class__)
+
 
 class CommandManager:
 
