@@ -4,10 +4,34 @@ from core import *
 import os
 import json
 
+from xml.etree.ElementTree import Element, SubElement, tostring
+import xml.etree.ElementTree as XMLET
+
 __all__ = ["Component", "Root", "Node"]
 
 COMPONENT_TYPE_ROOT = 0
 COMPONENT_TYPE_NODE = 1
+
+class Observer:
+
+    def update(self):
+        print(self.__name__, "update")
+
+class Subject:
+
+    _observers = [] 
+
+    def attach(self, observer: Observer):
+        if (observer not in self._observers):
+            self._observers.append(observer)
+
+    def detach(self, observer: Observer):
+        if (observer in self._observers):
+            self._observers.remove(observer)
+
+    def notify(self):
+        for observer in self._observers:
+            observer.update()
 
 def traversal(root: 'Component', level: int, result: List[List[int]]) -> None:
     if (not root): return
@@ -22,6 +46,38 @@ def traversal(root: 'Component', level: int, result: List[List[int]]) -> None:
             traversal(child, level + 1, result)
 
 
+class ComponentVisitor(abc.ABC):
+    
+    @abc.abstractmethod
+    def save(self, component):
+        pass
+
+
+class XMLSavingVisitor(ComponentVisitor):
+
+    def save(self, component):
+        node_tag = Element("Node")
+        id_tag = SubElement(node_tag, "Id")
+        id_tag.text = str(component.id)
+        desc_tag = SubElement(node_tag, "Desc")
+        desc_tag.text = component.desc
+        pid_tag = SubElement(node_tag, "Pid")
+        parent = component.get_parent()
+        pid_tag.text = str(parent.id) if (parent) else str(-1)
+        return node_tag
+
+
+class JSONSavingVisitor(ComponentVisitor):
+
+    def save(self, component):
+        info = {}
+        info["id"] = component.id
+        info["desc"] = component.desc
+        parent = component.get_parent()
+        info["pid"] = parent.id if (parent) else -1
+        return info
+
+
 class Component(abc.ABC):
 
     def __init__(self, id:int, desc:str):
@@ -31,8 +87,6 @@ class Component(abc.ABC):
         self._siblings = []
         self._parent = None
         self._is_delete = False
-
-    
     
     @property
     def is_delete(self) -> bool:
@@ -111,6 +165,10 @@ class Component(abc.ABC):
         return clone_node
 
 
+    def accept(self, visitor: ComponentVisitor):
+        return visitor.save(self)
+
+
 class Root(Component):
 
     def __init__(self, id:int, desc:str):
@@ -168,7 +226,7 @@ class Node(Component):
         return "{desc} <Id:{id}, Type:{type}>".format(**info)
 
 
-class MindMapModel:
+class MindMapModel(Subject):
 
     def __init__(self):
         self._root = None
@@ -279,14 +337,21 @@ class MindMapModel:
         traversal(self._root, 0, result)
         return result
 
-    def save(self, path: str) -> bool:
-        data = self._convert_to_json_format()
-        print("Save", path, data)
+    def save(self, path: str, file_type) -> bool:
         try:
             if (os.path.exists(path)):
                 os.remove(path)
-            with open(path, 'w') as file:
-                json.dump(data, file)
+            data = None
+            if file_type == "xml":
+                data = self._convert_to_xml_format()
+                tree = XMLET.ElementTree(data)
+                tree.write(path)
+                print("Save as XML format", path, tostring(data))
+            else:
+                data = self._convert_to_json_format()
+                with open(path, 'w') as file:
+                    json.dump(data, file)
+                print("Save as JSON format", path, data)
             return True
         except Exception as e:
             print(e)
@@ -298,14 +363,17 @@ class MindMapModel:
         self._serial_ids = -1
         self._components.clear()
 
-    def load(self, path: str) -> bool:
+    def load(self, path: str, file_type: str) -> bool:
         if (os.path.exists(path)):
             try:
-                with open(path, 'r') as file:
-                    data = json.load(file)
-                print("Load", path, data)
-                self.reset()
-                self._build_from_json(data)
+                if file_type == "xml":
+                    raise Exception("Not implemented.")
+                else:
+                    with open(path, 'r') as file:
+                        data = json.load(file)
+                    print("Load", path, data)
+                    self.reset()
+                    self._build_from_json(data)
                 return True
             except Exception as e:
                 print("Load failed")
@@ -320,17 +388,41 @@ class MindMapModel:
     def restore_from_snapshot(self, snapshot: List) -> None:
         self._build_from_json(snapshot)
 
+    def _convert_to_xml_format(self):
+        xml_visitor = XMLSavingVisitor()
+        data = Element("Data")
+        for layer in self.map:
+            for pair in layer:
+                node = self._components[pair[0]]
+                info = node.accept(xml_visitor)
+                data.append(info)
+                print("xml", tostring(data))
+        return data
+
+
     def _convert_to_json_format(self) -> List:
+        json_visitor = JSONSavingVisitor()
         data = []
         for layer in self.map:
             for pair in layer:
                 node = self._components[pair[0]]
-                info = {}
-                info["id"] = node.id
-                info["desc"] = node.desc
-                info["pid"] = pair[1]
+                info = node.accept(json_visitor)
                 data.append(info)
         return data
+
+    def _build_from_xml(self, data) -> None:
+        serial_ids = -1
+        for obj in data:
+            print("parse", obj)
+        #     node = self._create_node(obj["id"], obj["desc"])
+        #     print(node.info)
+        #     if (self.insert_node(node, obj["pid"])):
+        #         if (node.id > serial_ids): serial_ids = node.id
+        #     else:
+        #         raise Exception("Build mind map from JSON failed.")
+        # self._serial_ids = serial_ids
+        # print("Builded mind map from JSON.")
+        # print(self.map)
 
     def _build_from_json(self, data: List) -> None:
         serial_ids = -1
@@ -526,6 +618,7 @@ class CommandManager:
                 self._redo_commands.clear()
                 self._undo_commands.append(command)
                 self.info()
+                self._mind_map.notify()
                 return True
         else:
             raise ValueError("Command should not be none.")
@@ -539,6 +632,7 @@ class CommandManager:
             if (command.execute(self._mind_map)):
                 self._undo_commands.append(command)
                 self.info()
+                self._mind_map.notify()
                 return True
         return False
 
@@ -550,6 +644,7 @@ class CommandManager:
             if (command.unexecute(self._mind_map)):
                 self._redo_commands.append(command)
                 self.info()
+                self._mind_map.notify()
                 return True
         return False
 

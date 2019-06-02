@@ -12,6 +12,7 @@ from model import Command, AddComponentCommand, EditComponentCommand, DeleteComp
 from model import MindMapModel, CommandManager
 from model import Component, Root, Node
 from model import traversal
+from model import Observer, Subject
 
 import os
 import sys
@@ -44,7 +45,7 @@ class EditState(State):
         if (desc):
             try:
                 self._context.command_manager.execute(EditComponentCommand(node_id, desc))
-                self._context.main_window.draw()
+                # self._context.main_window.draw()
             except Exception as e:
                 traceback.print_exc()
 
@@ -61,7 +62,7 @@ class DeleteState(State):
         if (node_id != None and reply == QMessageBox.Yes):
             try:
                 self._context.command_manager.execute(DeleteComponentCommand(node_id))
-                self._context.main_window.draw()
+                # self._context.main_window.draw()
             except Exception as e:
                 traceback.print_exc()
 
@@ -231,7 +232,7 @@ class MapScene(QGraphicsScene):
             self.update()
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QMainWindow, Observer):
 
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
@@ -358,10 +359,12 @@ class MainWindow(QMainWindow):
         self.update_title()
         self.show()
 
-
+    def update(self):
+        self.draw()
 
     def _init_mind_map(self) -> None:
         self._mind_map = MindMapModel()
+        self._mind_map.attach(self)
         self._command_manager = CommandManager(self._mind_map)
         self._presentation_model = PresentationModel(self, self._command_manager) 
         self._pressed_selection_action()
@@ -432,7 +435,7 @@ class MainWindow(QMainWindow):
                 traversal(clone_node, 0, result)
                 print(result)
                 self._command_manager.execute(PasteComponentCommand(node.id, clone_node))
-                self.draw()
+                self.update()
 
 
     def _get_selected_node(self) -> Component:
@@ -454,21 +457,21 @@ class MainWindow(QMainWindow):
         if (pid != None and desc != None):
             try:
                 self._command_manager.execute(AddComponentCommand(pid, desc))
-                self.draw()
+                self.update()
             except Exception as e:
                 traceback.print_exc()
 
     def undo(self):
         if (self._command_manager.undo()):
             print("Undo succeed")
-            self.draw()
+            self.update()
         else:
             print("Undo Failed")
 
     def redo(self):
         if (self._command_manager.redo()):
             print("Redo succeed")
-            self.draw()
+            self.update()
         else:
             print("Redo Failed")
 
@@ -495,9 +498,10 @@ class MainWindow(QMainWindow):
         dlg.show()
 
     def file_open(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open file", "", "All Files (*);;GogoMind documents (*.ggm)")
-        if (self._mind_map.load(path)):
-            self.draw()
+        path, _ = QFileDialog.getOpenFileName(self, "Open file", "", "All Files (*);;GogoMind documents (*.ggm);;GogoMind XML documents (*.xml)")
+        type = path.split('.')[-1]
+        if (self._mind_map.load(path, type)):
+            self.update()
             self.path = path
             self.update_title()
             return True
@@ -512,12 +516,13 @@ class MainWindow(QMainWindow):
             return self._mind_map.save(self.path)
 
     def file_saveas(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save file", "", "GogoMind documents (*.ggm)")
+        path, type = QFileDialog.getSaveFileName(self, "Save file", "", "GogoMind documents (*.ggm);;GogoMind XML documents (*.xml)")
         if not path:
             # If dialog is cancelled, will return ''
             return False
         else:
-            if (self._mind_map.save(path)):
+            file_type = "ggm" if "xml" not in type else "xml"
+            if (self._mind_map.save(path, file_type)):
                 self.path = path
                 self.update_title()
                 return True
